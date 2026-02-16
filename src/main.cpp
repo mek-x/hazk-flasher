@@ -30,8 +30,11 @@
 #define DEBUG_BAUD      115200 // USB Serial
 #define BOOTLOADER_BAUD 57600  // Bootloader Sync (Stable)
 #define BRIDGE_BAUD     115200 // Normal Operation
+#define SER2NET_PORT    8888   // TCP Port for Serial Bridge
 
 WebServer server(80);
+WiFiServer ser2netServer(SER2NET_PORT);
+WiFiClient tcpClient;
 
 // STM32 Protocol Constants (AN3155)
 #define STM32_ACK   0x79
@@ -331,6 +334,7 @@ void setup() {
     }
     Serial.println("\nReady!");
     Serial.print("Web Interface: http://"); Serial.println(WiFi.localIP());
+    ser2netServer.begin();
 
     // == OTA SETUP ==
     ArduinoOTA.setHostname("hazk-flasher");
@@ -364,9 +368,30 @@ void setup() {
 void loop() {
     ArduinoOTA.handle();
     server.handleClient();
+
+    // Handle new TCP connections
+    if (ser2netServer.hasClient()) {
+        if (tcpClient) tcpClient.stop();
+        tcpClient = ser2netServer.available();
+    }
+
     if (!flashingMode) {
-        // Transparent Bridge
-        if (Serial.available()) Serial1.write(Serial.read());
-        if (Serial1.available()) Serial.write(Serial1.read());
+        // STM32 -> USB & Network
+        if (Serial1.available()) {
+            uint8_t buf[128];
+            int avail = Serial1.available();
+            if (avail > 128) avail = 128;
+            size_t len = Serial1.readBytes(buf, avail);
+            Serial.write(buf, len);
+            if (tcpClient && tcpClient.connected()) tcpClient.write(buf, len);
+        }
+        // USB -> STM32
+        while (Serial.available()) {
+            Serial1.write(Serial.read());
+        }
+        // Network -> STM32
+        while (tcpClient && tcpClient.connected() && tcpClient.available()) {
+            Serial1.write(tcpClient.read());
+        }
     }
 }
