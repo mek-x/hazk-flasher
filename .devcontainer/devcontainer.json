@@ -1,0 +1,29 @@
+{
+    "name": "HAZK Flasher (Linux)",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    // CRITICAL FOR LINUX USB ACCESS
+    "privileged": true,
+
+    "runArgs": [
+        "--net=host"
+    ],
+
+    // Mount the /dev folder so the container sees USB insertions instantly
+    "mounts": [
+        "source=/dev,target=/dev,type=bind"
+    ],
+
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "platformio.platformio-ide",
+                "ms-vscode.cpptools"
+            ]
+        }
+    },
+
+    // Run as the non-root user 'vscode'
+    "remoteUser": "vscode"
+}
