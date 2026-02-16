@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
+#include <ArduinoOTA.h>
 
 // == USER CONFIGURATION ==
 // WiFi credentials are now defined in `credentials.ini`
@@ -331,6 +332,29 @@ void setup() {
     Serial.println("\nReady!");
     Serial.print("Web Interface: http://"); Serial.println(WiFi.localIP());
 
+    // == OTA SETUP ==
+    ArduinoOTA.setHostname("hazk-flasher");
+    ArduinoOTA.onStart([]() {
+        flashingMode = true; // Stop bridge during update
+        Serial.println("OTA Start");
+    });
+    ArduinoOTA.onEnd([]() {
+        flashingMode = false;
+        Serial.println("\nOTA End");
+    });
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+        Serial.printf("OTA Progress: %u%%\r", (progress / (total / 100)));
+    });
+    ArduinoOTA.onError([](ota_error_t error) {
+        Serial.printf("Error[%u]: ", error);
+        if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+        else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+        else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+        else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+        else if (error == OTA_END_ERROR) Serial.println("End Failed");
+    });
+    ArduinoOTA.begin();
+
     server.on("/", handleRoot);
     server.on("/identify", handleIdentify);
     server.on("/update", HTTP_POST, handleUpdateResult, handleUpdateUpload);
@@ -338,6 +362,7 @@ void setup() {
 }
 
 void loop() {
+    ArduinoOTA.handle();
     server.handleClient();
     if (!flashingMode) {
         // Transparent Bridge
