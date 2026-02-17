@@ -4,6 +4,11 @@
 #include <ESPmDNS.h>
 #include <ArduinoOTA.h>
 
+#ifndef VERSION
+    #error "VERSION not defined! Please set VERSION in platformio.ini build_flags."
+    #define VERSION "unknown"
+#endif
+
 // == USER CONFIGURATION ==
 // WiFi credentials are now defined in `credentials.ini`
 // and passed to the compiler as build flags.
@@ -209,7 +214,7 @@ const char* html_page = R"(
 </script>
 </head>
 <body>
-    <h1>HAZK-03 Flasher</h1>
+    <h1>HAZK-03 Flasher v. )" VERSION R"(</h1>
 
     <div class="card">
         <h3>1. Diagnostics</h3>
@@ -332,30 +337,33 @@ void setup() {
         delay(500);
         Serial.print(".");
     }
-    Serial.println("\nReady!");
-    Serial.print("Web Interface: http://"); Serial.println(WiFi.localIP());
+    Serial.println("\nWiFi Connected!");
     ser2netServer.begin();
 
     // == OTA SETUP ==
     ArduinoOTA.setHostname("hazk-flasher");
     ArduinoOTA.onStart([]() {
         flashingMode = true; // Stop bridge during update
+        server.stop(); // Stop web server during update
         Serial.println("OTA Start");
     });
     ArduinoOTA.onEnd([]() {
         flashingMode = false;
+        server.begin(); // Restart web server after update
         Serial.println("\nOTA End");
     });
     ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-        Serial.printf("OTA Progress: %u%%\r", (progress / (total / 100)));
+        Serial.printf("OTA Progress: %u%%\r", (progress * 100) / total);
+        digitalWrite(PIN_LED, !digitalRead(PIN_LED));
     });
     ArduinoOTA.onError([](ota_error_t error) {
-        Serial.printf("Error[%u]: ", error);
+        Serial.printf("\nError: ");
         if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
         else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
         else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
         else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
         else if (error == OTA_END_ERROR) Serial.println("End Failed");
+        else Serial.printf("Unknown Error: %u\n", error);
     });
     ArduinoOTA.begin();
 
@@ -363,6 +371,9 @@ void setup() {
     server.on("/identify", handleIdentify);
     server.on("/update", HTTP_POST, handleUpdateResult, handleUpdateUpload);
     server.begin();
+
+    Serial.println("\nReady! version: " VERSION);
+    Serial.print("Web interface: http://"); Serial.println(WiFi.localIP());
 }
 
 void loop() {
@@ -373,6 +384,8 @@ void loop() {
     if (ser2netServer.hasClient()) {
         if (tcpClient) tcpClient.stop();
         tcpClient = ser2netServer.available();
+        if (tcpClient && tcpClient.connected())
+            tcpClient.write("Welcome to HAZK flasher. Serial output of target:\n", 51);
     }
 
     if (!flashingMode) {
@@ -384,6 +397,7 @@ void loop() {
             size_t len = Serial1.readBytes(buf, avail);
             Serial.write(buf, len);
             if (tcpClient && tcpClient.connected()) tcpClient.write(buf, len);
+            digitalWrite(PIN_LED, !digitalRead(PIN_LED));
         }
         // USB -> STM32
         while (Serial.available()) {
